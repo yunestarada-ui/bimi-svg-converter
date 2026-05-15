@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BIMI SVG Vectorizer</title>
+<script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f6f2;
+    --surface: #ffffff;
+    --surface2: #f2f1ed;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1917;
+    --text2: #6b6a66;
+    --text3: #9b9a96;
+    --accent: #1a1917;
+    --pass: #166534;
+    --pass-bg: #dcfce7;
+    --fail: #991b1b;
+    --fail-bg: #fee2e2;
+    --warn: #92400e;
+    --warn-bg: #fef3c7;
+    --blue: #1e40af;
+    --blue-bg: #dbeafe;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    font-family: 'Georgia', serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  .app { max-width: 900px; margin: 0 auto; }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 2rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 { font-size: 22px; font-weight: normal; letter-spacing: -0.02em; }
+  .header-sub { font-size: 13px; color: var(--text2); font-family: 'Courier New', monospace; }
+  .badge { margin-left: auto; font-family: 'Courier New', monospace; font-size: 11px; background: var(--text); color: #fff; padding: 3px 9px; border-radius: 3px; letter-spacing: 0.05em; }
+
+  /* Upload */
+  .drop-zone {
+    border: 1.5px dashed var(--border2);
+    border-radius: var(--radius);
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--surface);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+  .drop-icon { font-size: 28px; margin-bottom: 10px; opacity: 0.3; }
+  .drop-zone h3 { font-size: 15px; font-weight: normal; margin-bottom: 5px; }
+  .drop-zone p { font-size: 12px; color: var(--text3); font-family: 'Courier New', monospace; }
+
+  /* Main layout */
+  .main { display: none; flex-direction: column; gap: 1.5rem; margin-top: 1.5rem; }
+  .main.visible { display: flex; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  /* Panels */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+
+  .panel-title {
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Preview boxes */
+  .preview-wrap { background: var(--surface2); border-radius: var(--radius-sm); min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+  .checker-bg {
+    background-image: linear-gradient(45deg, #ddd 25%, transparent 25%),
+      linear-gradient(-45deg, #ddd 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ddd 75%),
+      linear-gradient(-45deg, transparent 75%, #ddd 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
+    background-color: #f9f9f9;
+  }
+  .preview-wrap img, .preview-wrap svg { max-width: 100%; max-height: 200px; object-fit: contain; display: block; }
+  .preview-label { font-size: 10px; font-family: 'Courier New', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .preview-meta { font-size: 11px; color: var(--text3); font-family: 'Courier New', monospace; margin-top: 5px; }
+
+  /* Controls */
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl label { font-size: 11px; color: var(--text2); font-family: 'Courier New', monospace; }
+  .ctrl input[type=range] { width: 100%; accent-color: var(--accent); }
+  .ctrl select, .ctrl input[type=text] {
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    padding: 5px 8px;
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+  }
+  .ctrl-row { display: flex; align-items: center; justify-content: space-between; }
+  .ctrl-val { font-size: 11px; font-family: 'Courier New', monospace; color: var(--text2); min-width: 28px; text-align: right; }
+
+  /* Progress */
+  .progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 10px 0; display: none; }
+  .progress-bar.active { display: block; }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; border-radius: 2px; }
+  .status-text { font-size: 12px; font-family: 'Courier New', monospace; color: var(--text2); text-align: center; padding: 8px 0; }
+
+  /* Checklist */
+  .checklist { display: flex; flex-direction: column; gap: 5px; }
+  .check-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+  .check-item.pass { background: var(--pass-bg); }
+  .check-item.fail { background: var(--fail-bg); }
+  .check-item.warn { background: var(--warn-bg); }
+  .check-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+  .check-item.pass .check-icon { color: var(--pass); }
+  .check-item.fail .check-icon { color: var(--fail); }
+  .check-item.warn .check-icon { color: var(--warn); }
+  .check-body strong { font-size: 12px; font-weight: 600; display: block; font-family: sans-serif; }
+  .check-body span { font-size: 11px; color: var(--text2); font-family: 'Courier New', monospace; }
+
+  /* SVG code */
+  .code-block {
+    background: #1a1917;
+    color: #e8e6df;
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  /* Stats */
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-card {
+    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .stat-val { font-size: 18px; font-family: 'Courier New', monospace; font-weight: bold; }
+  .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; font-family: 'Courier New', monospace; }
+
+  /* Buttons */
+  .btn-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    color: var(--text);
+  }
+  .btn:hover { background: var(--surface2); }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--text); color: #fff; border-color: var(--text); }
+  .btn-primary:hover { opacity: 0.85; background: var(--text); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  /* Tracing spinner */
+  .trace-state { text-align: center; padding: 2rem 1rem; display: none; }
+  .trace-state.active { display: block; }
+  .spinner-ring {
+    display: inline-block; width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { height: 1px; background: var(--border); }
+
+  /* AI box */
+  .ai-output {
+    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text2);
+    min-height: 50px;
+    font-family: 'Georgia', serif;
+  }
+
+  .tag { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 3px; font-family: 'Courier New', monospace; letter-spacing: 0.04em; font-weight: 600; }
+  .tag-blue { background: var(--blue-bg); color: var(--blue); }
+  .tag-green { background: var(--pass-bg); color: var(--pass); }
+  .tag-amber { background: var(--warn-bg); color: var(--warn); }
+
+  .reset-btn { margin-left: auto; }
+
+  @media (max-width: 640px) {
+    .two-col, .three-col, .controls-grid { grid-template-columns: 1fr; }
+    body { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="header">
+    <div>
+      <h1>BIMI SVG Vectorizer</h1>
+      <span class="header-sub">raster → pure vector → BIMI-compliant SVG</span>
+    </div>
+    <span class="badge">SVG TINY 1.2</span>
+  </div>
+
+  <!-- Upload -->
+  <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="drop-icon">⬆</div>
+    <h3>Drop your logo here or click to upload</h3>
+    <p>PNG · JPG · WebP · GIF &nbsp;—&nbsp; max 10 MB</p>
+  </div>
+  <input type="file" id="file-input" accept="image/*" style="display:none">
+
+  <!-- Main -->
+  <div class="main" id="main">
+
+    <!-- Row 1: Before / After / Stats -->
+    <div class="two-col">
+      <div class="panel">
+        <p class="preview-label">Original (raster)</p>
+        <div class="preview-wrap checker-bg" id="orig-preview"></div>
+        <p class="preview-meta" id="orig-meta"></p>
+      </div>
+      <div class="panel">
+        <p class="preview-label">Vectorized SVG output</p>
+        <div class="preview-wrap checker-bg" id="svg-preview">
+          <div class="trace-state active" id="trace-state">
+            <div class="spinner-ring"></div>
+            <p class="status-text" id="status-text">Tracing image…</p>
+          </div>
+        </div>
+        <p class="preview-meta" id="svg-meta"></p>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stat-grid" id="stats-row" style="display:none">
+      <div class="stat-card">
+        <div class="stat-val" id="stat-paths">—</div>
+        <div class="stat-label">SVG paths</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-colors">—</div>
+        <div class="stat-label">colors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-size">—</div>
+        <div class="stat-label">file size</div>
+      </div>
+    </div>
+
+    <!-- Row 2: Controls + Checklist -->
+    <div class="two-col">
+      <div class="panel">
+        <p class="panel-title">⚙ Trace options</p>
+        <div class="controls-grid">
+          <div class="ctrl">
+            <label>Color count</label>
+            <div class="ctrl-row">
+              <input type="range" id="ctrl-colors" min="2" max="32" value="8" oninput="document.getElementById('val-colors').textContent=this.value">
+              <span class="ctrl-val" id="val-colors">8</span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label>Blur (smoothing)</label>
+            <div class="ctrl-row">
+              <input type="range" id="ctrl-blur" min="0" max="5" value="0" step="1" oninput="document.getElementById('val-blur').textContent=this.value">
+              <span class="ctrl-val" id="val-blur">0</span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label>Path simplify</label>
+            <div class="ctrl-row">
+              <input type="range" id="ctrl-ltres" min="0.1" max="5" value="1" step="0.1" oninput="document.getElementById('val-ltres').textContent=parseFloat(this.value).toFixed(1)">
+              <span class="ctrl-val" id="val-ltres">1.0</span>
+            </div>
+          </div>
+          <div class="ctrl">
+            <label>Background shape</label>
+            <select id="ctrl-bg" onchange="toggleBgColor()">
+              <option value="none">Transparent (none)</option>
+              <option value="square">Filled square</option>
+              <option value="circle">Filled circle</option>
+              <option value="roundedsquare">Filled rounded square</option>
+            </select>
+          </div>
+          <div class="ctrl" id="bg-color-ctrl" style="display:none;">
+            <label>Background color</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="color" id="ctrl-bgcolor" value="#ffffff" style="width:36px;height:32px;padding:2px;border:1px solid var(--border2);border-radius:var(--radius-sm);cursor:pointer;background:none;">
+              <input type="text" id="ctrl-bgcolor-hex" value="#ffffff" style="flex:1;font-family:'Courier New',monospace;" oninput="syncColorFromHex(this.value)" placeholder="#ffffff">
+            </div>
+          </div>
+          <div class="ctrl">
+            <label>Padding (%)</label>
+            <select id="ctrl-pad">
+              <option value="0">None</option>
+              <option value="5" selected>5%</option>
+              <option value="10">10%</option>
+              <option value="15">15%</option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <label>Logo title</label>
+            <input type="text" id="ctrl-title" value="Company Logo">
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:'Courier New',monospace;font-size:11px;">
+            <input type="checkbox" id="ctrl-square" checked style="accent-color:var(--accent);width:13px;height:13px;">
+            Auto-pad non-square images to 1:1 canvas
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:'Courier New',monospace;font-size:11px;">
+            <input type="checkbox" id="ctrl-crop" checked style="accent-color:var(--accent);width:13px;height:13px;">
+            Auto-crop white/transparent borders before tracing
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:'Courier New',monospace;font-size:11px;">
+            <input type="checkbox" id="ctrl-adaptive" checked style="accent-color:var(--accent);width:13px;height:13px;">
+            Maximize quality — auto-calibrate colors to fill ~32 KB
+          </label>
+        </div>
+        <div style="margin-top: 14px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-primary" onclick="runTrace()" id="trace-btn">↻ Re-trace</button>
+          <button class="btn" onclick="autoOptimize()" title="Sets low color + high simplify to get under 32 KB">⚡ Auto-optimize for BIMI</button>
+          <span id="adaptive-result" style="font-size:11px;color:var(--text2);font-family:'Courier New',monospace;"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">✓ BIMI compliance</p>
+        <div class="checklist" id="checklist">
+          <div style="font-size:12px; color: var(--text3); font-family: 'Courier New', monospace; padding: 8px 0;">Waiting for trace…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Analysis -->
+    <div class="panel">
+      <p class="panel-title">✦ AI analysis</p>
+      <div class="ai-output" id="ai-output">Upload a logo to get BIMI-specific feedback.</div>
+    </div>
+
+    <!-- SVG Code -->
+    <div class="panel">
+      <p class="panel-title">{ } SVG output — pure vector paths</p>
+      <div class="code-block" id="code-block">—</div>
+    </div>
+
+    <!-- Actions -->
+    <div class="btn-bar">
+      <button class="btn btn-primary" id="dl-btn" onclick="downloadSVG()" disabled>↓ Download SVG</button>
+      <button class="btn" id="copy-btn" onclick="copyCode()" disabled>⧉ Copy SVG code</button>
+      <button class="btn" id="copy-bimi-btn" onclick="copyBIMIRecord()" disabled>⧉ Copy BIMI DNS record</button>
+      <button class="btn reset-btn" onclick="resetTool()">✕ Reset</button>
+    </div>
+
+    <!-- BIMI DNS hint -->
+    <div class="panel" id="dns-panel" style="display:none">
+      <p class="panel-title">◈ BIMI DNS record (once hosted)</p>
+      <div class="code-block" id="dns-record">—</div>
+      <p style="font-size:11px; color: var(--text3); margin-top:8px; font-family:'Courier New',monospace;">Replace the URL with your actual hosted SVG location. Add as a TXT record at <strong>default._bimi.yourdomain.com</strong></p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let origImg = null;
+let origFile = null;
+let currentSVGString = '';
+let currentFileName = '';
+let lastTracedSVG = '';
+let lastCanvasW = 0, lastCanvasH = 0;
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+function loadFile(file) {
+  origFile = file;
+  currentFileName = file.name.replace(/\.[^.]+$/, '');
+  document.getElementById('ctrl-title').value = currentFileName.replace(/[-_]/g, ' ');
+  const reader = new FileReader();
+  reader.onload = e => {
+    origImg = new Image();
+    origImg.onload = () => {
+      document.getElementById('orig-preview').innerHTML = `<img src="${e.target.result}" alt="original">`;
+      const ratio = origImg.naturalWidth / origImg.naturalHeight;
+      const squareNote = Math.abs(ratio - 1) < 0.05 ? '· square ✓' : `· ratio ${ratio.toFixed(2)} ⚠`;
+      document.getElementById('orig-meta').textContent = `${origImg.naturalWidth}×${origImg.naturalHeight}px · ${(file.type.split('/')[1]||'img').toUpperCase()} · ${formatBytes(file.size)} ${squareNote}`;
+      document.getElementById('main').classList.add('visible');
+      runTrace();
+      runAIAnalysis(e.target.result, file.type);
+    };
+    origImg.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Crop canvas to non-white, non-transparent content bounding box ──
+function cropToContent(canvas) {
+  const ctx = canvas.getContext('2d');
+  const { width: w, height: h } = canvas;
+  const d = ctx.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const a = d[i + 3];
+      const isWhite = d[i] > 240 && d[i+1] > 240 && d[i+2] > 240;
+      if (a > 15 && !isWhite) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+  }
+
+  if (x1 <= x0 || y1 <= y0) return canvas; // nothing to crop
+
+  const margin = Math.ceil(Math.max(w, h) * 0.03); // 3% margin
+  x0 = Math.max(0, x0 - margin); y0 = Math.max(0, y0 - margin);
+  x1 = Math.min(w - 1, x1 + margin); y1 = Math.min(h - 1, y1 + margin);
+
+  const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+  const out = document.createElement('canvas');
+  out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(canvas, x0, y0, cw, ch, 0, 0, cw, ch);
+  return out;
+}
+
+// ── Build a square canvas, optionally cropping + padding ──
+function makeSquareCanvas(img, maxDim) {
+  const doCrop = document.getElementById('ctrl-crop').checked;
+  const doPad = document.getElementById('ctrl-square').checked;
+
+  // Step 1: draw original at capped resolution
+  let sw = img.naturalWidth, sh = img.naturalHeight;
+  const scale = Math.min(maxDim / sw, maxDim / sh, 1);
+  sw = Math.round(sw * scale); sh = Math.round(sh * scale);
+  let canvas = document.createElement('canvas');
+  canvas.width = sw; canvas.height = sh;
+  canvas.getContext('2d').drawImage(img, 0, 0, sw, sh);
+
+  // Step 2: crop white/transparent borders
+  if (doCrop) canvas = cropToContent(canvas);
+
+  // Step 3: pad to square
+  if (doPad && canvas.width !== canvas.height) {
+    const side = Math.max(canvas.width, canvas.height);
+    const ox = Math.round((side - canvas.width) / 2);
+    const oy = Math.round((side - canvas.height) / 2);
+    const sq = document.createElement('canvas');
+    sq.width = side; sq.height = side;
+    sq.getContext('2d').drawImage(canvas, ox, oy);
+    canvas = sq;
+  }
+
+  return canvas;
+}
+
+// ── Minify SVG: compress only path d= values, never touch tag attributes ──
+function minifySVG(svg) {
+  // Remove XML/SVG comments
+  svg = svg.replace(/<!--[\s\S]*?-->/g, '');
+  // Process ONLY path d="..." attribute content
+  svg = svg.replace(/\bd="([^"]*)"/g, (_, d) => {
+    let compressed = d
+      // Round all decimals to integers inside path data
+      .replace(/\d+\.\d+/g, n => Math.round(parseFloat(n)).toString())
+      // Strip spaces around path command letters (M L H V C S Q T A Z)
+      .replace(/([MLHVCSQTAZmlhvcsqtaz]) /g, '$1')
+      .replace(/ ([MLHVCSQTAZmlhvcsqtaz])/g, '$1')
+      .trim();
+    return `d="${compressed}"`;
+  });
+  // Collapse runs of whitespace between tags (safe — not inside attribute values)
+  svg = svg.replace(/\s{2,}/g, ' ').replace(/> </g, '><');
+  return svg.trim();
+}
+
+function toggleBgColor() {
+  const bg = document.getElementById('ctrl-bg').value;
+  const ctrl = document.getElementById('bg-color-ctrl');
+  ctrl.style.display = bg === 'none' ? 'none' : 'flex';
+  ctrl.style.flexDirection = 'column';
+  ctrl.style.gap = '4px';
+  reWrap();
+}
+
+// Re-apply background + padding instantly without re-tracing
+function reWrap() {
+  if (lastTracedSVG) wrapAsBIMI(lastTracedSVG, lastCanvasW, lastCanvasH);
+}
+
+function syncColorFromHex(val) {
+  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+    document.getElementById('ctrl-bgcolor').value = val;
+    reWrap();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const picker = document.getElementById('ctrl-bgcolor');
+  if (picker) picker.addEventListener('input', () => {
+    document.getElementById('ctrl-bgcolor-hex').value = picker.value;
+    reWrap();
+  });
+  // Also re-wrap when padding changes
+  const padSel = document.getElementById('ctrl-pad');
+  if (padSel) padSel.addEventListener('change', reWrap);
+});
+
+function buildOptions(colors, blur, ltres) {
+  return {
+    numberofcolors: colors,
+    blurradius: blur,
+    blurdelta: 20,
+    ltres: ltres,
+    qtres: ltres,
+    pathomit: 12,
+    colorsampling: 2,
+    layering: 0,
+    strokewidth: 0,
+    linefilter: false,
+    desc: false,
+    viewbox: true,
+    scale: 1,
+    roundcoords: 0,
+    deletebackground: false,
+  };
+}
+
+// Quick wrap to measure size without updating UI
+function measureSize(tracedSVG, cw, ch) {
+  const title = document.getElementById('ctrl-title').value || 'Logo';
+  const bg = document.getElementById('ctrl-bg').value;
+  const padPct = parseInt(document.getElementById('ctrl-pad').value);
+  const size = 240, pad = (size * padPct) / 100, inner = size - pad * 2;
+  const vbMatch = tracedSVG.match(/viewBox="([^"]*)"/);
+  const vbParts = vbMatch ? vbMatch[1].trim().split(/[\s,]+/).map(Number) : [0, 0, cw, ch];
+  const tw = vbParts[2] || cw, th = vbParts[3] || ch;
+  const innerMatch = tracedSVG.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
+  const inner2 = innerMatch ? innerMatch[1].trim() : tracedSVG;
+  const bgColor = document.getElementById('ctrl-bgcolor')?.value || '#ffffff';
+  let bgEl = '';
+  if (bg === 'square') bgEl = `<rect width="${size}" height="${size}" fill="${bgColor}"/>`;
+  if (bg === 'circle') bgEl = `<circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${bgColor}"/>`;
+  if (bg === 'roundedsquare') bgEl = `<rect width="${size}" height="${size}" rx="${Math.round(size*0.18)}" ry="${Math.round(size*0.18)}" fill="${bgColor}"/>`;
+  const svg = minifySVG(`<?xml version="1.0" encoding="UTF-8"?><svg version="1.2" baseProfile="tiny" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${bgEl}<title>${escXML(title)}</title><g transform="translate(${pad},${pad}) scale(${(inner/tw).toFixed(4)},${(inner/th).toFixed(4)})">${inner2}</g></svg>`);
+  return new Blob([svg]).size;
+}
+
+function runTrace() {
+  if (!origImg) return;
+  const ts = document.getElementById('trace-state');
+  ts.classList.add('active');
+  const svgPrev = document.getElementById('svg-preview');
+  if (!svgPrev.contains(ts)) svgPrev.appendChild(ts);
+  document.getElementById('status-text').textContent = 'Tracing…';
+  document.getElementById('trace-btn').disabled = true;
+  document.getElementById('stats-row').style.display = 'none';
+  document.getElementById('adaptive-result').textContent = '';
+
+  const userColors = parseInt(document.getElementById('ctrl-colors').value);
+  const blur = parseInt(document.getElementById('ctrl-blur').value);
+  const ltres = parseFloat(document.getElementById('ctrl-ltres').value);
+  const adaptive = document.getElementById('ctrl-adaptive').checked;
+
+  setTimeout(() => {
+    try {
+      const canvas = makeSquareCanvas(origImg, 512);
+      const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+
+      if (!adaptive) {
+        document.getElementById('status-text').textContent = 'Quantizing colors…';
+        const tracedSVG = ImageTracer.imagedataToSVG(imageData, buildOptions(userColors, blur, ltres));
+        lastTracedSVG = tracedSVG; lastCanvasW = canvas.width; lastCanvasH = canvas.height;
+        wrapAsBIMI(tracedSVG, canvas.width, canvas.height);
+        return;
+      }
+
+      // Adaptive: binary search for max colors that fit in 32 KB
+      const MAX_BYTES = 32768;
+      const TARGET_BYTES = 31000; // ~31 KB sweet spot
+      let lo = 2, hi = 32, bestSVG = null, bestColors = 2;
+
+      document.getElementById('status-text').textContent = 'Calibrating quality…';
+
+      // First quick scan: find rough upper bound
+      let tracedAt = {};
+      for (const c of [2, 4, 8, 16, 32]) {
+        const t = ImageTracer.imagedataToSVG(imageData, buildOptions(c, blur, ltres));
+        tracedAt[c] = t;
+        const sz = measureSize(t, canvas.width, canvas.height);
+        if (sz <= MAX_BYTES) { bestSVG = t; bestColors = c; lo = c; }
+        else { hi = c; break; }
+        if (sz >= TARGET_BYTES) break; // Already at target
+      }
+
+      // Binary search between lo and hi for finer result
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        const t = tracedAt[mid] || ImageTracer.imagedataToSVG(imageData, buildOptions(mid, blur, ltres));
+        tracedAt[mid] = t;
+        const sz = measureSize(t, canvas.width, canvas.height);
+        if (sz <= MAX_BYTES) { bestSVG = t; bestColors = mid; lo = mid; }
+        else { hi = mid; }
+        if (sz >= TARGET_BYTES && sz <= MAX_BYTES) break;
+      }
+
+      if (!bestSVG) {
+        // Even 2 colors is over limit — use 2 colors anyway
+        bestSVG = tracedAt[2] || ImageTracer.imagedataToSVG(imageData, buildOptions(2, blur, ltres));
+        bestColors = 2;
+      }
+
+      // Update the color slider to reflect what was actually used
+      document.getElementById('ctrl-colors').value = bestColors;
+      document.getElementById('val-colors').textContent = bestColors;
+      document.getElementById('adaptive-result').textContent = `→ calibrated to ${bestColors} colors`;
+
+      lastTracedSVG = bestSVG; lastCanvasW = canvas.width; lastCanvasH = canvas.height;
+      wrapAsBIMI(bestSVG, canvas.width, canvas.height);
+
+    } catch (err) {
+      document.getElementById('status-text').textContent = 'Trace failed: ' + err.message;
+      console.error(err);
+      document.getElementById('trace-btn').disabled = false;
+    }
+  }, 60);
+}
+
+function autoOptimize() {
+  document.getElementById('ctrl-colors').value = 3;
+  document.getElementById('val-colors').textContent = '3';
+  document.getElementById('ctrl-blur').value = 1;
+  document.getElementById('val-blur').textContent = '1';
+  document.getElementById('ctrl-ltres').value = 3;
+  document.getElementById('val-ltres').textContent = '3.0';
+  document.getElementById('ctrl-square').checked = true;
+  document.getElementById('ctrl-crop').checked = true;
+  runTrace();
+}
+
+function wrapAsBIMI(tracedSVG, canvasW, canvasH) {
+  const title = document.getElementById('ctrl-title').value || 'Logo';
+  const bg = document.getElementById('ctrl-bg').value;
+  const padPct = parseInt(document.getElementById('ctrl-pad').value);
+  const size = 240; // Fixed px — Google requires ≥96px and no % values
+  const pad = (size * padPct) / 100;
+  const inner = size - pad * 2;
+
+  // Get traced viewBox dimensions
+  const vbMatch = tracedSVG.match(/viewBox="([^"]*)"/);
+  const vbParts = vbMatch ? vbMatch[1].trim().split(/[\s,]+/).map(Number) : [0, 0, canvasW, canvasH];
+  const tracedW = vbParts[2] || canvasW;
+  const tracedH = vbParts[3] || canvasH;
+
+  // Extract inner SVG content
+  const innerMatch = tracedSVG.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
+  const innerContent = innerMatch ? innerMatch[1].trim() : tracedSVG;
+
+  const scaleX = (inner / tracedW).toFixed(6);
+  const scaleY = (inner / tracedH).toFixed(6);
+
+  let bgEl = '';
+  const bgColor = document.getElementById('ctrl-bgcolor')?.value || '#ffffff';
+  if (bg === 'square') bgEl = `\n  <rect width="${size}" height="${size}" fill="${bgColor}"/>`;
+  if (bg === 'circle') bgEl = `\n  <circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${bgColor}"/>`;
+  if (bg === 'roundedsquare') bgEl = `\n  <rect width="${size}" height="${size}" rx="${Math.round(size*0.18)}" ry="${Math.round(size*0.18)}" fill="${bgColor}"/>`;
+
+  currentSVGString = minifySVG(`<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.2" baseProfile="tiny"
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  viewBox="0 0 ${size} ${size}"
+  width="${size}" height="${size}">${bgEl}
+  <title>${escXML(title)}</title>
+  <g transform="translate(${pad},${pad}) scale(${scaleX},${scaleY})">
+    ${innerContent}
+  </g>
+</svg>`);
+
+  // Show preview
+  const blob = new Blob([currentSVGString], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  document.getElementById('svg-preview').innerHTML = `<img src="${url}" alt="vectorized SVG">`;
+
+  const svgBytes = new Blob([currentSVGString]).size;
+  const pathCount = (currentSVGString.match(/<path/g) || []).length;
+
+  // Count unique colors — ImageTracer uses fill on <g> elements and <path> elements
+  // Match both fill="#rrggbb" and fill="rgb(...)" patterns
+  const allFills = [
+    ...(currentSVGString.match(/fill="(#[a-fA-F0-9]{3,8})"/g) || []),
+    ...(currentSVGString.match(/fill="(rgba?\([^)]+\))"/g) || [])
+  ];
+  const uniqueColors = new Set(allFills.map(f => f.toLowerCase())).size;
+
+  document.getElementById('svg-meta').textContent = `Pure vector · ${pathCount} paths · ${formatBytes(svgBytes)}`;
+  document.getElementById('stat-paths').textContent = pathCount.toLocaleString();
+  document.getElementById('stat-colors').textContent = uniqueColors || parseInt(document.getElementById('ctrl-colors').value);
+  document.getElementById('stat-size').textContent = formatBytes(svgBytes);
+  document.getElementById('stats-row').style.display = 'grid';
+  document.getElementById('code-block').textContent = currentSVGString.substring(0, 2500) + (currentSVGString.length > 2500 ? '\n…' : '');
+  document.getElementById('dl-btn').disabled = false;
+  document.getElementById('copy-btn').disabled = false;
+  document.getElementById('copy-bimi-btn').disabled = false;
+  document.getElementById('trace-btn').disabled = false;
+
+  const dnsRecord = `v=BIMI1; l=https://yourserver.com/bimi/${currentFileName}-bimi.svg`;
+  document.getElementById('dns-record').textContent = dnsRecord;
+  document.getElementById('dns-panel').style.display = 'block';
+
+  runChecklist(svgBytes, pathCount, uniqueColors || parseInt(document.getElementById('ctrl-colors').value));
+}
+
+function runChecklist(svgBytes, pathCount, colorCount) {
+  const title = document.getElementById('ctrl-title').value;
+  const padToSquare = document.getElementById('ctrl-square').checked;
+  const origRatio = origImg ? origImg.naturalWidth / origImg.naturalHeight : 1;
+  const isSquare = padToSquare || Math.abs(origRatio - 1) < 0.05;
+  const hasTiny = currentSVGString.includes('baseProfile="tiny"');
+  const hasTitle = title.trim().length > 0;
+  const sizeOk = svgBytes < 32768;
+  const pathsOk = pathCount < 500;
+
+  // Google-specific checks
+  const hasPercentDims = /width="\d+%"|height="\d+%"/.test(currentSVGString);
+  const dimMatch = currentSVGString.match(/width="(\d+)"/);
+  const outputPx = dimMatch ? parseInt(dimMatch[1]) : 0;
+  const meetsGoogleMin = outputPx >= 96;
+
+  const suggestedColors = Math.max(2, parseInt(document.getElementById('ctrl-colors').value) - 2);
+  const sizeHint = sizeOk
+    ? `${formatBytes(svgBytes)} — within limit ✓`
+    : `${formatBytes(svgBytes)} — exceeds limit. Try ⚡ Auto-optimize or reduce colors to ${suggestedColors}`;
+
+  const items = [
+    { label: 'Pure vector paths (no embedded raster)',
+      detail: pathCount > 0 ? `${pathCount.toLocaleString()} path elements — fully scalable` : 'No paths traced — try different settings',
+      status: pathCount > 0 ? 'pass' : 'fail' },
+    { label: 'SVG Tiny 1.2 profile declared',
+      detail: 'version="1.2" baseProfile="tiny"',
+      status: hasTiny ? 'pass' : 'fail' },
+    { label: 'Title element present',
+      detail: hasTitle ? `"${title}"` : 'Missing — required by BIMI spec',
+      status: hasTitle ? 'pass' : 'fail' },
+    { label: 'Square aspect ratio (1:1)',
+      detail: isSquare
+        ? padToSquare ? 'Padded to square canvas ✓' : 'Source image is square ✓'
+        : `Source ratio ${origRatio.toFixed(2)} — enable "Auto-pad to square" above`,
+      status: isSquare ? 'pass' : 'warn' },
+    { label: 'File size < 32 KB',
+      detail: sizeHint,
+      status: sizeOk ? 'pass' : 'fail' },
+    { label: 'Fixed pixel dimensions (not %)',
+      detail: hasPercentDims
+        ? 'width/height use % values — Google will not display. Fixed px required'
+        : `width="${outputPx}" height="${outputPx}" — fixed pixel values ✓`,
+      status: hasPercentDims ? 'fail' : 'pass',
+      tag: 'Google' },
+    { label: 'Minimum 96×96px output size',
+      detail: meetsGoogleMin
+        ? `${outputPx}×${outputPx}px — meets Google minimum ✓`
+        : `${outputPx}×${outputPx}px — below Google's 96px minimum. VMC may pass but Gmail won't display`,
+      status: meetsGoogleMin ? 'pass' : 'fail',
+      tag: 'Google' },
+    { label: 'Path complexity',
+      detail: pathsOk
+        ? `${pathCount.toLocaleString()} paths — good`
+        : `${pathCount.toLocaleString()} paths — high complexity. Increase "Path simplify" or use ⚡ Auto-optimize`,
+      status: pathsOk ? 'pass' : 'warn' },
+    { label: 'Self-contained SVG',
+      detail: 'No external image references — pure SVG code',
+      status: 'pass' },
+  ];
+
+  const icons = { pass: '✓', fail: '✕', warn: '⚠' };
+  document.getElementById('checklist').innerHTML = items.map(i => `
+    <div class="check-item ${i.status}">
+      <span class="check-icon">${icons[i.status]}</span>
+      <div class="check-body">
+        <strong>${i.label}${i.tag ? ` <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:#dbeafe;color:#1e40af;font-family:'Courier New',monospace;vertical-align:middle;font-weight:400;">${i.tag}</span>` : ''}</strong>
+        <span>${i.detail}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function runAIAnalysis(dataUrl, mimeType) {
+  const panel = document.getElementById('ai-output');
+  panel.innerHTML = '<em style="color: var(--text3); font-size:13px;">Analyzing for BIMI suitability…</em>';
+  const base64 = dataUrl.split(',')[1];
+  const safeType = (mimeType && mimeType.startsWith('image/')) ? mimeType : 'image/png';
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: `You are a BIMI (Brand Indicators for Message Identification) logo compliance expert. Analyze logos for BIMI suitability. Keep it under 110 words. Cover: 1) Overall suitability, 2) Specific risks — detail level, color count, fine text, aspect ratio, transparency, 3) One concrete recommendation. Plain text only, no markdown.`,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: safeType, data: base64 } },
+          { type: 'text', text: 'Analyze this logo for BIMI SVG use. Will it vectorize cleanly? What should the team watch out for?' }
+        ]}]
+      })
+    });
+    const data = await res.json();
+    panel.textContent = data.content?.find(b => b.type === 'text')?.text || 'Analysis unavailable.';
+  } catch (e) {
+    panel.innerHTML = '<em style="color: var(--text3);">AI analysis unavailable.</em>';
+  }
+}
+
+function downloadSVG() {
+  if (!currentSVGString) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([currentSVGString], { type: 'image/svg+xml' }));
+  a.download = `${currentFileName || 'logo'}-bimi.svg`;
+  a.click();
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(currentSVGString).then(() => {
+    const btn = document.getElementById('copy-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+function copyBIMIRecord() {
+  const rec = document.getElementById('dns-record').textContent;
+  navigator.clipboard.writeText(rec).then(() => {
+    const btn = document.getElementById('copy-bimi-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+function resetTool() {
+  origImg = null; origFile = null; currentSVGString = '';
+  document.getElementById('main').classList.remove('visible');
+  document.getElementById('file-input').value = '';
+  document.getElementById('dns-panel').style.display = 'none';
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+function escXML(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+<script>
+  (function() {
+    const CORRECT = 'AQmaeYeJd*UE7eZ!';
+    const SESSION_KEY = 'pd_auth';
+
+    function showGate() {
+      document.body.style.overflow = 'hidden';
+      const gate = document.createElement('div');
+      gate.id = 'auth-gate';
+      gate.style.cssText = 'position:fixed;inset:0;background:#0f1f4a;display:flex;align-items:center;justify-content:center;z-index:99999;';
+      gate.innerHTML = `
+        <div style="background:#fff;border-radius:12px;padding:2.5rem 2rem;width:100%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+          <div style="font-size:28px;margin-bottom:0.5rem;">🔒</div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#6b7280;margin-bottom:0.25rem;">PowerDMARC</div>
+          <div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:1.5rem;">Internal Access Only</div>
+          <input id="pw-input" type="password" placeholder="Enter password" autocomplete="off"
+            style="width:100%;padding:0.65rem 0.85rem;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;outline:none;margin-bottom:0.75rem;box-sizing:border-box;" />
+          <div id="pw-error" style="font-size:12px;color:#ef4444;min-height:18px;margin-bottom:0.5rem;"></div>
+          <button id="pw-btn"
+            style="width:100%;padding:0.7rem;background:#1e3a8a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+            Continue
+          </button>
+        </div>`;
+      document.body.appendChild(gate);
+
+      const input = gate.querySelector('#pw-input');
+      const btn = gate.querySelector('#pw-btn');
+      const err = gate.querySelector('#pw-error');
+
+      function attempt() {
+        if (input.value === CORRECT) {
+          sessionStorage.setItem(SESSION_KEY, '1');
+          gate.remove();
+          document.body.style.overflow = '';
+        } else {
+          err.textContent = 'Incorrect password. Try again.';
+          input.value = '';
+          input.style.borderColor = '#ef4444';
+          setTimeout(() => { input.style.borderColor = '#e5e7eb'; }, 1500);
+          input.focus();
+        }
+      }
+
+      btn.addEventListener('click', attempt);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); });
+      input.focus();
+    }
+
+    if (sessionStorage.getItem(SESSION_KEY) !== '1') showGate();
+  })();
+</script>
+</body>
+</html>
